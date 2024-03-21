@@ -193,6 +193,8 @@
                         android:id="@+id/sizeDropDown"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:enabled="false"
+                        android:clickable="false"
                         />
 
                 </com.google.android.material.textfield.TextInputLayout>
@@ -210,6 +212,8 @@
                         android:id="@+id/colorsDropDown"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:enabled="false"
+                        android:clickable="false"
                         />
 
                 </com.google.android.material.textfield.TextInputLayout>
@@ -232,6 +236,12 @@
 
     </ScrollView>
 
-
+    <ProgressBar
+        android:id="@+id/main_category_progress_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:layout_centerInParent="true"
+        android:indeterminateTint="@color/g_gray700" />
 
 </RelativeLayout>

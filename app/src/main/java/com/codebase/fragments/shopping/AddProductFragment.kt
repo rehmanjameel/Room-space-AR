@@ -3,8 +3,8 @@ package com.codebase.fragments.shopping
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.ClipData
 import android.content.ContentResolver
+import android.content.Context
 import android.content.DialogInterface
 import android.content.DialogInterface.OnMultiChoiceClickListener
 import android.content.Intent
@@ -26,35 +26,40 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import com.codebase.ARoomApplication
 import com.codebase.adapters.ColorAdapter
 import com.codebase.aroom.R
 import com.codebase.aroom.databinding.FragmentAddProductBinding
+import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.ktx.storage
 import com.nicos.imagepickerandroid.image_picker.ImagePicker
 import com.nicos.imagepickerandroid.image_picker.ImagePickerInterface
 import com.nicos.imagepickerandroid.utils.image_helper_methods.ScaleBitmapModel
 import java.util.Locale
+import java.util.UUID
 
 
 class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerInterface {
 
     private lateinit var binding: FragmentAddProductBinding
     private lateinit var selectedColors: List<Int>
+    private lateinit var selectedSizes: List<String>
     private var interestsTopicsList: ArrayList<String> = ArrayList()
     private var langList: ArrayList<Int> = ArrayList()
     private lateinit var selectedLanguage: BooleanArray
     private var categoryList: ArrayList<String> = ArrayList()
-
+    private val storedImagesURl: ArrayList<String> = ArrayList()
     // Initialize Firebase Storage
     val storage = Firebase.storage
     val storageRef = storage.reference
+    // Initialize Firestore
+    val db = Firebase.firestore
+    private var imageUri: Uri? = null
     private var glbModelUri: Uri? = null
 
     private var imagePicker: ImagePicker? = null
 
-    var mArrayUri: ArrayList<Uri>? = null
+    private var mArrayUri: ArrayList<Uri>? = null
     var position = 0
     var imagesEncodedList: List<String>? = null
 
@@ -71,7 +76,7 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         super.onViewCreated(view, savedInstanceState)
 
         setUpFurnitureSize()
-        initImagePicker()
+//        initImagePicker()
 
         setFurnitureCategoryList()
 
@@ -84,8 +89,8 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         }
 
         binding.modelImagesTIL.setEndIconOnClickListener {
-            imagePicker?.pickMultipleImagesFromGallery()
-//            pickImage()
+//            imagePicker?.pickMultipleImagesFromGallery()
+            pickImage()
         }
 
         binding.modelTIL.setEndIconOnClickListener {
@@ -147,9 +152,20 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         }else if (color.isEmpty()) {
             binding.colorsDropDown.error = "Field required"
 
-        } else {
+        } else if (imageUri == null) {
+            Toast.makeText(requireContext(), "Please select the image", Toast.LENGTH_LONG).show()
+        }else {
 
-            uploadGLBFileAndImagesToFirebase(glbModelUri!!, mArrayUri!!)
+            Log.e("model uri", glbModelUri.toString())
+            Log.e("model image uri", mArrayUri.toString())
+            Log.e("model image uri size", selectedSizes.toString())
+            Log.e("model image uri color", selectedColors.toString())
+            showLoading()
+            uploadGLBFileAndImagesToFirebase(productName, selectCategory, glbModelUri!!,
+                imageUri!!,
+                description, price.toDouble(), offerPercentage.toDouble(), selectedSizes, selectedColors)
+//            mArrayUri?.let {
+//            }
         }
 
     }
@@ -161,7 +177,7 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         categoryList.add("Bed")
 
         val categoryAdapter = ArrayAdapter(
-            ARoomApplication.applicationContext(),
+            requireContext(),
             com.google.android.material.R.layout.support_simple_spinner_dropdown_item,
             categoryList
         )
@@ -205,6 +221,7 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
                     langList.add(i)
                     // Sort array list
                     langList.sort()
+                    Log.e("lang list", langList.toString())
                 } else {
                     // when checkbox unselected
                     // Remove position from langList
@@ -219,15 +236,22 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
             for (j in langList.indices) {
                 // concat array value
                 stringBuilder.append(interestsTopicsList[langList[j]])
+                Log.e("string builder", stringBuilder.toString())
+                Log.e("string builder000", interestsTopicsList[langList[j]])
+
                 // check condition
                 if (j != langList.size - 1) {
                     // When j value  not equal
                     // to lang list size - 1
                     // add comma
                     stringBuilder.append(", ")
+                    Log.e("string builder12", stringBuilder.toString())
+
                 }
             }
             // set text on textView
+            selectedSizes = convertStringToListOfString(stringBuilder.toString())
+            Log.e("selected sizes", selectedSizes.toString())
             binding.sizeDropDown.setText(stringBuilder.toString())
         }
         builder.setNegativeButton(
@@ -252,6 +276,11 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         builder.show()
     }
 
+    fun convertStringToListOfString(text: String): List<String> {
+        // Split the string by comma
+        val elements = text.split(",").map { it.trim() }
+        return elements
+    }
 
     private fun dialogOfColors() {
         val dialogView = LayoutInflater.from(requireActivity()).inflate(R.layout.dialog_color_picker, null)
@@ -299,27 +328,31 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
             if (result?.resultCode == Activity.RESULT_OK) {
                 val intent = result.data
                 if (intent != null) {
-                    if (intent.clipData != null) {
-                        val mClipData: ClipData = intent.clipData!!
-                        val count: Int = mClipData.itemCount
-                        for (i in 0 until count) {
-                            val imageUri: Uri = mClipData.getItemAt(i).uri
-                            Log.e("image uri", imageUri.toString())
-                            mArrayUri?.add(imageUri)
-                        }
-                        binding.modelImagesTIET.setText(mArrayUri.toString())
-                        uploadImagesToFirebase(mArrayUri!!)
-                        position = 0
-                    } else if (intent.data != null) {
-                        val imageUri: Uri = intent.data!!
-                        Log.e("image uri12", imageUri.toString())
-
-                        mArrayUri?.add(imageUri)
-                        Log.e("image uri123", imageUri.toString())
-
-                        binding.modelImagesTIET.setText(mArrayUri.toString())
-                        position = 0
-                    }
+                    imageUri =intent.data
+                    binding.modelImagesTIET.setText(imageUri.toString())
+//                    if (intent.clipData != null) {
+//                        val mClipData: ClipData = intent.clipData!!
+//                        val count: Int = mClipData.itemCount
+//                        for (i in 0 until count) {
+//                            val imageUri: Uri = mClipData.getItemAt(i).uri
+//                            Log.e("image uri", imageUri.toString())
+//                            mArrayUri?.add(imageUri)
+//                            Log.e("image uri012", mArrayUri.toString())
+//                        }
+//                        binding.modelImagesTIET.setText(mArrayUri.toString())
+//                        position = 0
+//                    } else if (intent.data != null) {
+//                        val imageUri: Uri = intent.data!!
+//                        Log.e("image uri12", imageUri.toString())
+//
+//                        mArrayUri?.add(imageUri)
+//                        Log.e("image uri123", imageUri.toString())
+//
+//                        Log.e("image uri01221212", mArrayUri.toString())
+//
+//                        binding.modelImagesTIET.setText(mArrayUri.toString())
+//                        position = 0
+//                    }
                 }
             } else {
                 Toast.makeText(requireActivity(), "No image selected", Toast.LENGTH_LONG).show()
@@ -332,21 +365,21 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         imagePicker = ImagePicker(
             fragment = this, // fragment instance - private
             coroutineScope = lifecycleScope, // mandatory - coroutine scope from activity or fragment - private
-            scaleBitmapModelForSingleImage = ScaleBitmapModel(
-                height = 100,
-                width = 100
-            ), // optional, change the scale for image, by default is null
+//            scaleBitmapModelForSingleImage = ScaleBitmapModel(
+//                height = 100,
+//                width = 100
+//            ), // optional, change the scale for image, by default is null
             scaleBitmapModelForMultipleImages = ScaleBitmapModel(
                 height = 100,
                 width = 100
             ), // optional, change the scale for image, by default is null
-            scaleBitmapModelForCameraImage = ScaleBitmapModel(
-                height = 100,
-                width = 100
-            ), // optional, change the scale for image, by default is null
-            enabledBase64ValueForSingleImage = true, // optional, by default is false - private
+//            scaleBitmapModelForCameraImage = ScaleBitmapModel(
+//                height = 100,
+//                width = 100
+//            ), // optional, change the scale for image, by default is null
+//            enabledBase64ValueForSingleImage = true, // optional, by default is false - private
             enabledBase64ValueForMultipleImages = true, // optional, by default is false - private
-            enabledBase64ValueForCameraImage = true, // optional, by default is false - private
+//            enabledBase64ValueForCameraImage = true, // optional, by default is false - private
             imagePickerInterface = this // call back interface
         )
         imagePicker?.initPickMultipleImagesFromGalleryResultLauncher(maxNumberOfImages = 5)
@@ -354,52 +387,37 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         //...other image picker initialization method(s)
     }
 
-    // Function to upload array of images
-    private fun uploadImagesToFirebase(images: ArrayList<Uri>) {
-        for ((index, imageUri) in images.withIndex()) {
-            val imageName = "image_$index.jpg" // You can use any naming convention you prefer
-
-            // Create a reference to the image
-            val imageRef = storageRef.child("images/$imageName")
-
-            // Upload the image
-            imageRef.putFile(imageUri)
-                .addOnSuccessListener { taskSnapshot ->
-                    // Image uploaded successfully
-                    // You can get the download URL of the uploaded image
-                    imageRef.downloadUrl.addOnSuccessListener { uri ->
-                        val downloadUrl = uri.toString()
-                        Log.e("downloaded urls", downloadUrl)
-                        // Handle the download URL as needed (e.g., save it to a database)
-                    }
-                }
-                .addOnFailureListener { exception ->
-                    // Handle any errors
-                }
-        }
-    }
-
     // Function to upload GLB file to Firebase Storage
-    private fun uploadGLBFileAndImagesToFirebase(glbFileUri: Uri, imageUris: ArrayList<Uri>) {
+    private fun uploadGLBFileAndImagesToFirebase(
+        productName: String, category: String,
+        glbFileUri: Uri, imageUris: Uri,
+        description: String, price: Double, offerPercentage: Double,
+        sizes: List<String>, colors: List<Int>
+    ) {
         // Upload the GLB file
-        val glbFileName = "your_glb_file.glb"
-        val glbRef = storageRef.child("glb_files/$glbFileName")
+//        val glbFileName = "your_glb_file.glb"
+        val glbRef = storageRef.child("glb_files/")
         glbRef.putFile(glbFileUri)
             .addOnSuccessListener { taskSnapshot ->
                 // GLB file uploaded successfully
                 glbRef.downloadUrl.addOnSuccessListener { glbUri ->
                     val glbDownloadUrl = glbUri.toString()
 
+                    showToast(requireContext(), "model uploaded!")
                     // Now upload each associated image
-                    for ((index, imageUri) in imageUris.withIndex()) {
-                        val imageName = "image_$index.jpg" // Set your desired image name here
-                        val imageRef = storageRef.child("images/$imageName")
-                        imageRef.putFile(imageUri)
+//                    for ((index, imageUri) in imageUris.withIndex()) {
+//                        val imageName = "image_$index.jpg" // Set your desired image name here
+                        val imageRef = storageRef.child("images/${UUID.randomUUID()}")
+                        imageRef.putFile(imageUris)
                             .addOnSuccessListener { imageTaskSnapshot ->
                                 // Image uploaded successfully
                                 imageRef.downloadUrl.addOnSuccessListener { imageUri ->
                                     val imageDownloadUrl = imageUri.toString()
 
+                                    storedImagesURl.add(imageDownloadUrl)
+                                    showToast(requireContext(), "image uploaded!")
+                                    saveProductDataToFirestore(productName, category, description, price,
+                                        offerPercentage, sizes, colors, glbDownloadUrl, storedImagesURl)
                                     // Update the GLB file to reference the uploaded image URL
                                     // This step depends on how your GLB file references images
                                     // You may need to parse the GLB file and update the URLs accordingly
@@ -407,12 +425,68 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
                             }
                             .addOnFailureListener { exception ->
                                 // Handle image upload failure
+                                hideLoading()
+                                showToast(requireContext(), "Product not added!")
+
                             }
-                    }
+//                    }
+
                 }
             }
             .addOnFailureListener { exception ->
                 // Handle GLB file upload failure
+                showToast(requireContext(), "Product not added!")
+                hideLoading()
+            }
+    }
+
+    // Function to save product data to Firestore
+    private fun saveProductDataToFirestore(
+        productName: String,
+        productCategory: String,
+        productDescription: String,
+        price: Double,
+        offerPercentage: Double,
+        sizes: List<String>,
+        colors: List<Int>,
+        glbFileUrl: String,
+        imageUrls: List<String>,
+//        imageUrls: String
+    ) {
+        // Create a new product document
+        val productData = hashMapOf(
+            "name" to productName,
+            "category" to productCategory,
+            "description" to productDescription,
+            "price" to price,
+            "offerPercentage" to offerPercentage,
+            "sizes" to sizes,
+            "colors" to colors,
+            "model" to glbFileUrl,
+            "images" to imageUrls
+        )
+
+        // Add the product data to Firestore
+        db.collection("Products")
+            .add(productData)
+            .addOnSuccessListener { documentReference ->
+                // Product data added successfully
+                // You can perform any additional actions here if needed
+                showToast(requireContext(), "Product added successfully!")
+                binding.productNameTIET.setText("")
+                binding.priceTIET.setText("")
+                binding.descriptionTIET.setText("")
+                binding.modelImagesTIET.setText("")
+                binding.modelTIET.setText("")
+                binding.offerPercentageTIET.setText("")
+                binding.sizeDropDown.setText("")
+                binding.colorsDropDown.setText("")
+                binding.categoryDropDown.setText("")
+                hideLoading()
+            }
+            .addOnFailureListener { e ->
+                // Handle errors
+                showToast(requireContext(), "Product not added!")
             }
     }
 
@@ -442,7 +516,7 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
                 } else {
                     val intent = Intent(Intent.ACTION_PICK)
                     intent.setType("image/*")
-                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+//                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                     activityResultLauncher.launch(Intent.createChooser(intent,"Select images"))
                 }
             } else {
@@ -455,7 +529,7 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
                     requestPermissions()
                 } else {
                     val intent = Intent(Intent.ACTION_PICK)
-                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+//                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                     intent.setType("image/*")
                     activityResultLauncher.launch(Intent.createChooser(intent,"Select images"))
                 }
@@ -464,7 +538,7 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
             Log.wtf("Here", "Pick image")
             val intent = Intent()
             intent.setType("image/*")
-            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+//            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             intent.setAction(Intent.ACTION_GET_CONTENT)
             activityResultLauncher.launch(intent)
         }
@@ -558,6 +632,17 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         }
         Log.e("typeee", mimeType.toString())
         return mimeType
+    }
+
+    private fun showLoading() {
+        binding.mainCategoryProgressBar.visibility = View.VISIBLE
+    }
+    private fun hideLoading() {
+        binding.mainCategoryProgressBar.visibility = View.GONE
+    }
+
+    fun showToast(context: Context, message: String) {
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
 }
