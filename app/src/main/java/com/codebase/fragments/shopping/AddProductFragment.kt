@@ -1,7 +1,6 @@
 package com.codebase.fragments.shopping
 
 import android.Manifest
-import android.R.attr.data
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
@@ -19,6 +18,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.MimeTypeMap
+import android.widget.ArrayAdapter
 import android.widget.ListView
 import android.widget.Toast
 import androidx.activity.result.ActivityResult
@@ -26,9 +26,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.codebase.ARoomApplication
 import com.codebase.adapters.ColorAdapter
 import com.codebase.aroom.R
 import com.codebase.aroom.databinding.FragmentAddProductBinding
+import com.google.firebase.ktx.Firebase
+import com.google.firebase.storage.ktx.storage
 import com.nicos.imagepickerandroid.image_picker.ImagePicker
 import com.nicos.imagepickerandroid.image_picker.ImagePickerInterface
 import com.nicos.imagepickerandroid.utils.image_helper_methods.ScaleBitmapModel
@@ -42,6 +45,12 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
     private var interestsTopicsList: ArrayList<String> = ArrayList()
     private var langList: ArrayList<Int> = ArrayList()
     private lateinit var selectedLanguage: BooleanArray
+    private var categoryList: ArrayList<String> = ArrayList()
+
+    // Initialize Firebase Storage
+    val storage = Firebase.storage
+    val storageRef = storage.reference
+    private var glbModelUri: Uri? = null
 
     private var imagePicker: ImagePicker? = null
 
@@ -63,6 +72,8 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
 
         setUpFurnitureSize()
         initImagePicker()
+
+        setFurnitureCategoryList()
 
         binding.colorsMenu.setEndIconOnClickListener {
             dialogOfColors()
@@ -138,8 +149,24 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
 
         } else {
 
+            uploadGLBFileAndImagesToFirebase(glbModelUri!!, mArrayUri!!)
         }
 
+    }
+
+    private fun setFurnitureCategoryList() {
+        categoryList.add("Chair")
+        categoryList.add("Table")
+        categoryList.add("Sofa")
+        categoryList.add("Bed")
+
+        val categoryAdapter = ArrayAdapter(
+            ARoomApplication.applicationContext(),
+            com.google.android.material.R.layout.support_simple_spinner_dropdown_item,
+            categoryList
+        )
+
+        binding.categoryDropDown.setAdapter(categoryAdapter)
     }
 
     private fun setUpFurnitureSize() {
@@ -281,6 +308,7 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
                             mArrayUri?.add(imageUri)
                         }
                         binding.modelImagesTIET.setText(mArrayUri.toString())
+                        uploadImagesToFirebase(mArrayUri!!)
                         position = 0
                     } else if (intent.data != null) {
                         val imageUri: Uri = intent.data!!
@@ -298,7 +326,7 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
             }
         }
 
-    fun initImagePicker() {
+    private fun initImagePicker() {
         //Builder
         //Note: fragmentActivity or fragment are mandatory one of them
         imagePicker = ImagePicker(
@@ -324,6 +352,68 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         imagePicker?.initPickMultipleImagesFromGalleryResultLauncher(maxNumberOfImages = 5)
 
         //...other image picker initialization method(s)
+    }
+
+    // Function to upload array of images
+    private fun uploadImagesToFirebase(images: ArrayList<Uri>) {
+        for ((index, imageUri) in images.withIndex()) {
+            val imageName = "image_$index.jpg" // You can use any naming convention you prefer
+
+            // Create a reference to the image
+            val imageRef = storageRef.child("images/$imageName")
+
+            // Upload the image
+            imageRef.putFile(imageUri)
+                .addOnSuccessListener { taskSnapshot ->
+                    // Image uploaded successfully
+                    // You can get the download URL of the uploaded image
+                    imageRef.downloadUrl.addOnSuccessListener { uri ->
+                        val downloadUrl = uri.toString()
+                        Log.e("downloaded urls", downloadUrl)
+                        // Handle the download URL as needed (e.g., save it to a database)
+                    }
+                }
+                .addOnFailureListener { exception ->
+                    // Handle any errors
+                }
+        }
+    }
+
+    // Function to upload GLB file to Firebase Storage
+    private fun uploadGLBFileAndImagesToFirebase(glbFileUri: Uri, imageUris: ArrayList<Uri>) {
+        // Upload the GLB file
+        val glbFileName = "your_glb_file.glb"
+        val glbRef = storageRef.child("glb_files/$glbFileName")
+        glbRef.putFile(glbFileUri)
+            .addOnSuccessListener { taskSnapshot ->
+                // GLB file uploaded successfully
+                glbRef.downloadUrl.addOnSuccessListener { glbUri ->
+                    val glbDownloadUrl = glbUri.toString()
+
+                    // Now upload each associated image
+                    for ((index, imageUri) in imageUris.withIndex()) {
+                        val imageName = "image_$index.jpg" // Set your desired image name here
+                        val imageRef = storageRef.child("images/$imageName")
+                        imageRef.putFile(imageUri)
+                            .addOnSuccessListener { imageTaskSnapshot ->
+                                // Image uploaded successfully
+                                imageRef.downloadUrl.addOnSuccessListener { imageUri ->
+                                    val imageDownloadUrl = imageUri.toString()
+
+                                    // Update the GLB file to reference the uploaded image URL
+                                    // This step depends on how your GLB file references images
+                                    // You may need to parse the GLB file and update the URLs accordingly
+                                }
+                            }
+                            .addOnFailureListener { exception ->
+                                // Handle image upload failure
+                            }
+                    }
+                }
+            }
+            .addOnFailureListener { exception ->
+                // Handle GLB file upload failure
+            }
     }
 
     override fun onMultipleGalleryImagesWithBase64Value(
@@ -437,15 +527,15 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
     private val pickFileLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val data: Intent? = result.data
-            val selectedFileUri = data?.data
-            Log.e("selected glb", selectedFileUri.toString())
-            if (selectedFileUri != null) {
-                getMimeType(selectedFileUri)
-                binding.modelTIET.setText(selectedFileUri.toString())
-                Log.e("typeee12", getMimeType(selectedFileUri).toString())
+            glbModelUri = data?.data
+            Log.e("selected glb", glbModelUri.toString())
+            if (glbModelUri != null) {
+                getMimeType(glbModelUri!!)
+                binding.modelTIET.setText(glbModelUri.toString())
+                Log.e("typeee12", getMimeType(glbModelUri!!).toString())
 
             }
-            // Now you can use selectedFileUri for uploading or processing
+            // Now you can use glbModelUri for uploading or processing
         }
     }
 
