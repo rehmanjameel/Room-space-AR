@@ -2,6 +2,7 @@ package com.codebase.fragments.loginRegister
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,6 +11,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import com.codebase.ARoomApplication
 import com.codebase.activities.ShoppingActivity
 import com.codebase.util.Resource
 import com.codebase.aroom.R
@@ -18,6 +20,7 @@ import com.codebase.dialog.setupBottomSheetDialog
 import com.codebase.viewmodel.starting.LoginViewModel
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.collectLatest
 
 @AndroidEntryPoint
 class LoginFragment : Fragment(R.layout.fragment_login) {
@@ -83,6 +86,7 @@ class LoginFragment : Fragment(R.layout.fragment_login) {
                     is Resource.Success -> {
                         binding.btnLoginLogin.revertAnimation()
 
+                        getDetails()
                         Intent(requireActivity(),ShoppingActivity::class.java).also {intent->
                             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
                             startActivity(intent)
@@ -101,5 +105,28 @@ class LoginFragment : Fragment(R.layout.fragment_login) {
         }
 
 
+
     }
+
+    private fun getDetails() {
+        lifecycleScope.launchWhenStarted {
+            viewModel.user.collectLatest {
+                when(it){
+
+                    is Resource.Success ->{
+                        val user = it.data
+                        val aRoomApplication = ARoomApplication()
+                        aRoomApplication.saveString("role", user!!.userRole)
+                        Log.e("user role ion home rolee", user.userRole)
+
+                    }
+                    is Resource.Error ->{
+                        Toast.makeText(requireContext() , it.message , Toast.LENGTH_SHORT)
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
 }

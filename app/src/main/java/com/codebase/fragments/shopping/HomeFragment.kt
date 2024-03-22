@@ -1,11 +1,13 @@
 package com.codebase.fragments.shopping
 
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
+import com.codebase.ARoomApplication
 import com.codebase.adapters.HomeViewPagerAdapter
 import com.codebase.aroom.R
 import com.codebase.aroom.databinding.FragmentHomeBinding
@@ -25,7 +27,7 @@ class HomeFragment :Fragment(R.layout.fragment_home) {
         binding = FragmentHomeBinding.inflate(inflater)
         return binding.root
     }
-
+    val aRoomApplication = ARoomApplication()
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -38,8 +40,13 @@ class HomeFragment :Fragment(R.layout.fragment_home) {
 //            BedFragment()
         )
 
-        binding.addProducts.setOnClickListener {
-           findNavController().navigate(R.id.action_homeFragment_to_addProductFragment)
+        Log.e("user role ion home", aRoomApplication.getValueString("role").toString())
+        if (aRoomApplication.getValueString("role").equals("admin")) {
+            binding.addProducts.setOnClickListener {
+                findNavController().navigate(R.id.action_homeFragment_to_addProductFragment)
+            }
+        } else {
+            binding.addProducts.visibility = View.GONE
         }
 
         binding.viewPagerHome.isUserInputEnabled = false
@@ -57,22 +64,6 @@ class HomeFragment :Fragment(R.layout.fragment_home) {
             }
         }.attach()
 
-//        lifecycleScope.launchWhenStarted {
-//            viewModel.user.collectLatest {
-//                when(it){
-//
-//                    is Resource.Success ->{
-//                        val user = it.data
-//                        val aRoomApplication = ARoomApplication()
-//                        aRoomApplication.saveString("user_role", user!!.userRole)
-//
-//                    }
-//                    is Resource.Error ->{
-//                        Toast.makeText(requireContext() , it.message , Toast.LENGTH_SHORT)
-//                    }
-//                    else -> Unit
-//                }
-//            }
-//        }
+
     }
 }

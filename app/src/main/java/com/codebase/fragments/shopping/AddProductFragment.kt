@@ -276,7 +276,7 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         builder.show()
     }
 
-    fun convertStringToListOfString(text: String): List<String> {
+    private fun convertStringToListOfString(text: String): List<String> {
         // Split the string by comma
         val elements = text.split(",").map { it.trim() }
         return elements
@@ -619,7 +619,7 @@ class AddProductFragment : Fragment(R.layout.fragment_add_product), ImagePickerI
         pickFileLauncher.launch(intent)
     }
 
-    fun getMimeType(uri: Uri): String? {
+    private fun getMimeType(uri: Uri): String? {
         var mimeType: String? = null
         mimeType = if (ContentResolver.SCHEME_CONTENT == uri.scheme) {
             val cr: ContentResolver = requireActivity().contentResolver

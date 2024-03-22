@@ -23,7 +23,7 @@ class ProfileViewModel @Inject constructor(
     init {
         getUser()
     }
-    fun getUser (){
+    private fun getUser (){
         
         viewModelScope.launch { _user.emit(Resource.Loading()) }
         
